@@ -20,6 +20,7 @@ IMPORTANT: Due to YouTube Content Security Policies (Error 153), this applicatio
 To run this project:
 
     Navigate to the W3Schools HTML Editor.
+    https://www.w3schools.com/html/html_editor.asp
     Delete all existing code in the editor.
     Paste the full content of index.html from this repository.
     Click the green "Run" button.
