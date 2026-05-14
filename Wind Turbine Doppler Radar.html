@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wind Turbine Radar - Fixed Audio Input</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; color: #0f0; font-family: 'Courier New', monospace; }
+        
+        #container { position: relative; width: 100vw; height: 100vh; }
+
+        #bg-container {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 0; pointer-events: none; opacity: 0.6; 
+            background-size: cover; background-position: center; background-color: #001100;
+        }
+
+        iframe { width: 100%; height: 100%; border: none; }
+        
+        #radar-canvas {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 5;
+        }
+
+        #spectrum-canvas {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 120px;
+            z-index: 6; opacity: 0.9; pointer-events: none;
+        }
+
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 10; pointer-events: none; display: flex; flex-direction: column;
+            justify-content: space-between; padding: 20px; box-sizing: border-box;
+        }
+
+        .panel {
+            background: rgba(0, 20, 0, 0.9);
+            border: 1px solid #0f0; padding: 15px; pointer-events: auto;
+            width: 320px; box-shadow: 0 0 15px rgba(0,255,0,0.3);
+        }
+
+        .rpm-panel {
+            position: absolute; top: 20px; right: 20px;
+            background: rgba(0, 30, 0, 0.9);
+            border: 1px solid #0ff; padding: 15px; pointer-events: auto;
+            width: 220px; text-align: center;
+        }
+
+        h1 { margin: 0 0 10px 0; font-size: 1.2rem; text-transform: uppercase; color: #fff; }
+        h2 { margin: 0 0 5px 0; font-size: 0.9rem; text-transform: uppercase; color: #0ff; }
+        
+        button {
+            background: #0f0; color: #000; border: none; padding: 10px;
+            font-weight: bold; cursor: pointer; width: 100%; margin-top: 8px;
+            text-transform: uppercase; font-size: 0.85rem;
+        }
+        button:hover { background: #ccffcc; }
+        button#test-btn { background: #f00; color: #fff; margin-top: 5px; }
+        button#fallback-btn { background: #ff9900; color: #000; margin-top: 10px; display: none; }
+
+        .debug-row { display: flex; justify-content: space-between; margin-top: 5px; font-size: 0.8rem; color: #ccc; }
+        #vol-display { font-weight: bold; color: #fff; }
+        .clip-warning { color: #f00; font-weight: bold; font-size: 0.7rem; animation: blink 1s infinite; display: none;}
+        
+        @keyframes blink { 50% { opacity: 0; } }
+
+        input[type=range] { width: 100%; margin: 5px 0; cursor: pointer; }
+        
+        #status-msg { color: #ffff00; font-size: 0.75rem; margin-top: 5px; min-height: 1.2em; }
+
+        .rpm-bar-container {
+            width: 100%; height: 15px; background: #003300; margin-top: 5px; border: 1px solid #0ff;
+        }
+        .rpm-bar {
+            height: 100%; background: #0ff; width: 0%; transition: width 0.1s linear;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+<div id="container">
+    <div id="bg-container">
+        <iframe id="video-iframe" 
+            src="https://www.youtube.com/embed/live_stream?channel=UCyi9IC6SAxU0aOPrkTYbz1g&autoplay=1&mute=0&rel=0" 
+            allow="autoplay; encrypted-media" allowfullscreen>
+        </iframe>
+    </div>
+    
+    <canvas id="radar-canvas"></canvas>
+    <canvas id="spectrum-canvas"></canvas>
+
+    <div id="ui-layer">
+        <div class="panel">
+            <h1>Radar System</h1>
+            <button id="start-btn">1. ACTIVATE SENSORS (MIC)</button>
+            
+            <div id="controls" style="display:none; margin-top:15px; border-top: 1px dashed #0f0; padding-top:15px;">
+                <div class="debug-row">
+                    <span>Input Level:</span>
+                    <span id="vol-display">0</span>
+                </div>
+                <div id="clip-warning" class="clip-warning">⚠ SIGNAL CLIPPED!</div>
+                
+                <!-- NEW: Manual Mic Gain to fight Auto-Gain -->
+                <div style="margin-top:8px; border-top:1px solid #0f0; padding-top:5px;">
+                    <div class="debug-row">
+                        <span style="font-size:0.7rem; color:#fff;">MIC GAIN (Manual)</span>
+                        <span id="mic-gain-val" style="font-size:0.7rem; color:#fff;">1.0x</span>
+                    </div>
+                    <input type="range" id="mic-gain-slider" min="0.1" max="5.0" step="0.1" value="1.0">
+                </div>
+
+                <div class="debug-row" style="margin-top:5px;">
+                    <span>Threshold:</span>
+                    <span id="thresh-display">30</span>
+                </div>
+                
+                <label style="font-size:0.8rem;">Radar Sensitivity</label>
+                <input type="range" id="sens-slider" min="0" max="100" value="40">
+                
+                <button id="test-btn">2. FORCE BLIP (TEST)</button>
+                
+                <button id="fallback-btn" onclick="enableStaticMode()">VIDEO ERROR? CLICK HERE</button>
+                
+                <div id="status-msg">System Standby...</div>
+            </div>
+        </div>
+
+        <div class="rpm-panel">
+            <h2>TURBINE RPM</h2>
+            <div id="rpm-value" style="font-size: 2.2rem; font-weight: bold; color: #0ff;">0.0</div>
+            <div style="font-size: 0.7rem; color: #aaa;">REAL-TIME SPEED</div>
+            <div class="rpm-bar-container">
+                <div id="rpm-bar-fill" class="rpm-bar"></div>
+            </div>
+            
+            <div style="margin-top:10px; border-top:1px dashed #0ff; padding-top:5px;">
+                <div class="debug-row">
+                    <span style="font-size:0.7rem; color:#fff;">RPM BOOST</span>
+                    <span id="boost-val" style="font-size:0.7rem; color:#fff;">1.0x</span>
+                </div>
+                <input type="range" id="rpm-boost" min="0.1" max="5.0" step="0.1" value="1.0">
+                <div style="font-size:0.6rem; color:#888;">Increase if RPM is low</div>
+            </div>
+
+            <div class="debug-row" style="margin-top:5px; border-top:1px solid #004444; padding-top:2px;">
+                <span style="font-size:0.6rem;">RAW BASS:</span>
+                <span id="bass-display" style="font-size:0.6rem; color:#fff;">0</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- FALLBACK LOGIC ---
+    const fallbackBtn = document.getElementById('fallback-btn');
+    const bgContainer = document.getElementById('bg-container');
+    setTimeout(() => { fallbackBtn.style.display = 'block'; }, 2000);
+    function enableStaticMode() {
+        const imgUrl = "https://images.unsplash.com/photo-1532601224476-15c79f2f7a51?q=80&w=1920&auto=format&fit=crop";
+        bgContainer.innerHTML = `<img src="${imgUrl}" style="width:100%; height:100%; object-fit:cover; opacity:0.6;">`;
+        fallbackBtn.style.display = 'none';
+        document.getElementById('status-msg').innerText = "Static Mode: Open YouTube video separately for audio.";
+        document.getElementById('status-msg').style.color = "#0ff";
+    }
+
+    // --- AUDIO CONFIG ---
+    const startBtn = document.getElementById('start-btn');
+    const controlsDiv = document.getElementById('controls');
+    const volDisplay = document.getElementById('vol-display');
+    const threshDisplay = document.getElementById('thresh-display');
+    const slider = document.getElementById('sens-slider');
+    const testBtn = document.getElementById('test-btn');
+    const statusMsg = document.getElementById('status-msg');
+    const bassDisplay = document.getElementById('bass-display');
+    const clipWarning = document.getElementById('clip-warning');
+    
+    // New Mic Gain Elements
+    const micGainSlider = document.getElementById('mic-gain-slider');
+    const micGainVal = document.getElementById('mic-gain-val');
+    
+    const boostSlider = document.getElementById('rpm-boost');
+    const boostVal = document.getElementById('boost-val');
+    let rpmBoostMultiplier = 1.0;
+
+    let audioContext, analyser, gainNode; // Added gainNode
+    let dataArray;
+    let isAudioActive = false;
+    let sensitivityThreshold = 30;
+
+    let currentRPM = 0;
+    const MAX_RPM = 21.0;
+    const rpmDisplay = document.getElementById('rpm-value');
+    const rpmBar = document.getElementById('rpm-bar-fill');
+
+    slider.addEventListener('input', (e) => {
+        sensitivityThreshold = 100 - e.target.value;
+        threshDisplay.innerText = sensitivityThreshold;
+    });
+
+    micGainSlider.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        if(gainNode) gainNode.gain.value = val;
+        micGainVal.innerText = val.toFixed(1) + "x";
+    });
+
+    boostSlider.addEventListener('input', (e) => {
+        rpmBoostMultiplier = parseFloat(e.target.value);
+        boostVal.innerText = rpmBoostMultiplier.toFixed(1) + "x";
+    });
+
+    startBtn.addEventListener('click', async () => {
+        statusMsg.innerText = "Initializing Microphone (Manual Gain Mode)...";
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioContext = new AudioContext();
+            if (audioContext.state === 'suspended') await audioContext.resume();
+
+            // FIX: Constraints to DISABLE Auto Gain Control (AGC)
+            const constraints = {
+                audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false, // <--- CRITICAL FIX
+                    latency: 0
+                }
+            };
+
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 512; 
+            analyser.smoothingTimeConstant = 0.5;
+            
+            const source = audioContext.createMediaStreamSource(stream);
+            
+            // Add Gain Node for manual control
+            gainNode = audioContext.createGain();
+            gainNode.gain.value = parseFloat(micGainSlider.value);
+            
+            // Chain: Source -> GainNode -> Analyser
+            source.connect(gainNode);
+            gainNode.connect(analyser);
+            
+            const bufferLength = analyser.frequencyBinCount;
+            dataArray = new Uint8Array(bufferLength);
+            
+            isAudioActive = true;
+            startBtn.style.display = 'none';
+            controlsDiv.style.display = 'block';
+            statusMsg.innerText = "System Active - Manual Control Enabled";
+            statusMsg.style.color = "#0f0";
+            
+        } catch (err) {
+            console.error(err);
+            statusMsg.innerText = "ERROR: " + err.message;
+            statusMsg.style.color = "#f00";
+            // Fallback for browsers that don't support specific constraints
+            if(err.name === 'OverconstrainedError') {
+                alert("Your browser does not support disabling Auto-Gain. The volume might fluctuate.");
+            }
+        }
+    });
+
+    testBtn.addEventListener('click', () => {
+        spawnBlip(255); spawnBlip(200); spawnBlip(150);
+        currentRPM = 21.0; 
+    });
+
+    // --- THREE.JS SCENE SETUP ---
+    const canvas3D = document.querySelector('#radar-canvas');
+    const renderer = new THREE.WebGLRenderer({ canvas: canvas3D, alpha: true, antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 30, 45); 
+    camera.lookAt(0, 0, 0);
+
+    const gridHelper = new THREE.GridHelper(80, 40, 0x00ff00, 0x003300);
+    scene.add(gridHelper);
+
+    const sweepGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 40)]);
+    const sweepMat = new THREE.LineBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 });
+    const sweepLine = new THREE.Line(sweepGeo, sweepMat);
+    sweepLine.rotation.x = -Math.PI / 2;
+    scene.add(sweepLine);
+
+    const obstaclesGroup = new THREE.Group();
+    scene.add(obstaclesGroup);
+    let blips = [];
+    const sphereGeo = new THREE.SphereGeometry(1, 16, 16);
+    const blipMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+
+    function spawnBlip(intensity) {
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 5 + Math.random() * 30;
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * radius;
+
+        const mesh = new THREE.Mesh(sphereGeo, blipMat.clone());
+        mesh.position.set(x, 1, z);
+        const scale = 0.5 + (intensity / 50); 
+        mesh.scale.set(scale, scale, scale);
+        
+        if(intensity > 200) mesh.material.color.setHex(0xffff00);
+        else mesh.material.color.setHex(0xff0000);
+
+        obstaclesGroup.add(mesh);
+        blips.push({ mesh: mesh, life: 80 });
+    }
+
+    // --- 2D SPECTRUM ---
+    const canvas2D = document.querySelector('#spectrum-canvas');
+    const ctx2D = canvas2D.getContext('2d');
+    
+    function resize() {
+        canvas2D.width = window.innerWidth;
+        canvas2D.height = 120;
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // --- ANIMATION LOOP ---
+    let sweepAngle = 0;
+    
+    function animate() {
+        requestAnimationFrame(animate);
+
+        let avgVolume = 0;
+        let bassEnergy = 0;
+
+        if (isAudioActive && analyser) {
+            analyser.getByteFrequencyData(dataArray);
+            
+            // 1. Calculate Average Volume
+            let sum = 0;
+            let maxVal = 0;
+            for(let i = 0; i < dataArray.length; i++) {
+                sum += dataArray[i];
+                if(dataArray[i] > maxVal) maxVal = dataArray[i];
+            }
+            avgVolume = sum / dataArray.length;
+            volDisplay.innerText = Math.floor(avgVolume);
+
+            // Check for Clipping (Saturation)
+            if (maxVal > 250) {
+                clipWarning.style.display = 'block';
+                volDisplay.style.color = '#f00';
+            } else {
+                clipWarning.style.display = 'none';
+                volDisplay.style.color = '#fff';
+            }
+
+            // 2. Bass Energy
+            let bassSum = 0;
+            for(let i = 0; i < 12; i++) bassSum += dataArray[i];
+            bassEnergy = bassSum / 12;
+            bassDisplay.innerText = Math.floor(bassEnergy);
+
+            // 3. RPM Algorithm (Proportional)
+            let targetRPM = (bassEnergy * rpmBoostMultiplier * 0.15);
+            if (targetRPM > MAX_RPM) targetRPM = MAX_RPM;
+
+            // Smoothing
+            currentRPM = currentRPM + (targetRPM - currentRPM) * 0.1;
+
+            // Update UI
+            rpmDisplay.innerText = currentRPM.toFixed(1);
+            rpmBar.style.width = (currentRPM / MAX_RPM) * 100 + '%';
+            
+            if (currentRPM > 15) rpmBar.style.backgroundColor = '#ff00ff';
+            else if (currentRPM > 7) rpmBar.style.backgroundColor = '#ffff00';
+            else rpmBar.style.backgroundColor = '#00ffff';
+
+            // Draw Spectrum
+            ctx2D.clearRect(0, 0, canvas2D.width, canvas2D.height);
+            const barWidth = (canvas2D.width / dataArray.length) * 2.5;
+            let x = 0;
+            
+            for(let i = 0; i < dataArray.length; i++) {
+                const barHeight = (dataArray[i] / 255) * canvas2D.height;
+                const r = barHeight + (25 * (i/dataArray.length));
+                const g = 250 * (i/dataArray.length);
+                ctx2D.fillStyle = `rgb(${r},${g},50)`;
+                ctx2D.fillRect(x, canvas2D.height - barHeight, barWidth, barHeight);
+                x += barWidth + 1;
+            }
+
+            // Radar Logic
+            if (avgVolume > sensitivityThreshold) {
+                if (Math.random() > 0.8) spawnBlip(avgVolume);
+            }
+        }
+
+        // --- 3D UPDATES ---
+        sweepAngle += 0.03;
+        sweepLine.rotation.y = -sweepAngle;
+
+        for (let i = blips.length - 1; i >= 0; i--) {
+            blips[i].life--;
+            const lifeRatio = blips[i].life / 80;
+            blips[i].mesh.material.opacity = lifeRatio;
+            blips[i].mesh.position.y = 1 + (1 - lifeRatio) * 5;
+            blips[i].mesh.scale.multiplyScalar(1.01);
+            if (blips[i].life <= 0) {
+                obstaclesGroup.remove(blips[i].mesh);
+                blips.splice(i, 1);
+            }
+        }
+
+        renderer.render(scene, camera);
+    }
+    animate();
+</script>
+</body>
+</html>
