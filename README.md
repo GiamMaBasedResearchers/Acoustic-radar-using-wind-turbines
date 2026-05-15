@@ -5,7 +5,8 @@ Audio radar through wind turbines and their webcams
 <img width="1168" height="784" alt="image" src="https://github.com/user-attachments/assets/882ec7cd-e883-4789-a210-e722feca1108" />
 
 Real Image fo Code:
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/0d0574fa-b5b1-48a3-84e5-7ce54ba62753" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/74a208da-9d27-46c4-a6c0-717d2e1a0c52" />
+
 
 Wind Turbine Doppler Radar & RPM Monitor
 Overview
