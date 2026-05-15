@@ -4,6 +4,8 @@ Audio radar through wind turbines and their webcams
 "The image is for illustrative purposes only. The appearance of the actual product may differ from the image."
 <img width="1168" height="784" alt="image" src="https://github.com/user-attachments/assets/882ec7cd-e883-4789-a210-e722feca1108" />
 
+Thanks to @idare https://x.com/idare/status/2055194696507654267 https://x.com/idare
+
 Real Image fo Code:
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/aa58bff9-b350-416f-a443-63d08413a32d" />
 
