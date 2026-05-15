@@ -1,8 +1,11 @@
 # Acoustic-radar-using-wind-turbines
 Audio radar through wind turbines and their webcams
 
+"The image is for illustrative purposes only. The appearance of the actual product may differ from the image."
 <img width="1168" height="784" alt="image" src="https://github.com/user-attachments/assets/882ec7cd-e883-4789-a210-e722feca1108" />
 
+Real Image fo Code:
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/0d0574fa-b5b1-48a3-84e5-7ce54ba62753" />
 
 Wind Turbine Doppler Radar & RPM Monitor
 Overview
